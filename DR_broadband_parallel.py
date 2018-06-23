@@ -20,7 +20,6 @@ comm = MPI.COMM_WORLD
 size = comm.Get_size() #total number of parallel processors, should
 #be equal to length of wavelength vector
 rank = comm.Get_rank() #ID number of this instance from 0:size-1
-master_rank = 0 #processor where everything is saved
 #%% initialize parser for mandatory/optional inputs
 parser = argparse.ArgumentParser()
 parser.add_argument("-bo","--beta_obj",type=float,default=0.9,help="beta for object update")
@@ -172,23 +171,23 @@ for itt in range(iterations):
         bestErr = meanErr.copy()
     comm.barrier()
 #%%gather S
-if rank == master_rank:
+if rank == 0:
     sGlobal = np.empty([n_modes,1])
 else:
     sGlobal = None    
-comm.Gather(s[rank], sGlobal, root=master_rank)    
+comm.Gather(s[rank], sGlobal, root=0)    
 #%% gather and save
 if save_flag:  
     bestObjs = {}
     apertures = {}
-    bestObjs = comm.gather(bestObj,root=master_rank)
-    apertures = comm.gather(aperture, root=master_rank)
-    if rank == master_rank:
+    bestObjs = comm.gather(bestObj,root=0)
+    apertures = comm.gather(aperture, root=0)
+    if rank == 0:
         saveString = "DR_output_%s" % job_id
         np.savez(saveString,bestObj=bestObjs, aperture=apertures,
                  fourierError=fourierErrorGlobal, s=sGlobal) #save output as dict 
-
-print 'reconstruction complete!'
+if rank == 0:
+    print 'reconstruction complete!'
 
 
 
