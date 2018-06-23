@@ -143,7 +143,7 @@ for itt in range(iterations):
         probe_max = np.max(np.abs(aperture))
         p_u = u_old * aperture
         z_u = np.fft.fft2(p_u)
-        z = Z[:][:,:][aper].copy()
+        z = Z[:,:,aper].copy()
         z_F = 2*z_u - z
 #        weight = np.sqrt(s[rank]) / np.sqrt(np.sum(np.abs(aperture)**2))
         collected_mags = np.empty([y_kspace[0],y_kspace[1]])
