@@ -152,7 +152,7 @@ for itt in range(iterations):
         scale = (1-w) * np.sqrt(current_dp / collected_mags) + w
         z_F = scale * z_F
         z += z_F - z_u
-        Z[:][:,:][aper] = z.copy()
+        Z[:][:,:,aper] = z.copy()
         p_u_new = np.fft.ifft2(z)
         diff_exit_wave = p_u_new - p_u
         dt = beta_obj / probe_max ** 2
