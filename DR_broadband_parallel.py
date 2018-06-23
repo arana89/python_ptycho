@@ -148,7 +148,7 @@ for itt in range(iterations):
 #        weight = np.sqrt(s[rank]) / np.sqrt(np.sum(np.abs(aperture)**2))
         collected_mags = np.empty([y_kspace[0],y_kspace[1]])
         comm.Allreduce(np.abs(z_F) ** 2, collected_mags, op=MPI.SUM)
-        collected_mags = collected_mags.T #for some reason, Allreduce transposes in this context
+#        collected_mags = collected_mags.T #for some reason, Allreduce transposes in this context
         scale = (1-w) * np.sqrt(current_dp / collected_mags) + w
         z_F = scale * z_F
         z += z_F - z_u
