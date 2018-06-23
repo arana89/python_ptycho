@@ -120,12 +120,13 @@ if big_obj[rank] ==  0:
 else:
     initialObj = big_obj.copy()
 aperture = aperture + 0j
-Z = np.zeros([bigXLocal,bigYLocal,nApert])
+Z = np.zeros([y_kspace[0],y_kspace[1],nApert])
 ws = weight_initial + (weight_final - weight_initial)* ((np.arange(iterations,dtype=float)+1)/iterations) ** order
 fourierErrorGlobal = np.zeros([iterations,nApert]) 
      
  #%% main reconstruction loop
-print '=============starting DR reconstruction============='
+if rank == 0: 
+    print '=============starting DR reconstruction============='
 for itt in range(iterations):
     t0 = time.time()
     w = ws[itt]
