@@ -120,7 +120,7 @@ if big_obj[rank] ==  0:
 else:
     initialObj = big_obj.copy()
 aperture = aperture + 0j
-Z = np.zeros([y_kspace[0],y_kspace[1],nApert])
+Z = np.zeros([y_kspace[0],y_kspace[1],nApert],dtype=complex)
 ws = weight_initial + (weight_final - weight_initial)* ((np.arange(iterations,dtype=float)+1)/iterations) ** order
 fourierErrorGlobal = np.zeros([iterations,nApert]) 
      
