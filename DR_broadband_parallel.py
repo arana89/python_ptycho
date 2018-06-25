@@ -146,12 +146,13 @@ for itt in range(iterations):
         p_u = u_old * aperture
         z_0 = np.fft.fft2(p_u)
 #        z = Z[:,:,aper].copy()
-        z_F = (1-alpha_itt)*z_0 - alpha_itt * Z[:,:,aper]
+        z_F = (1+alpha_itt)*z_0 - alpha_itt * Z[:,:,aper]
 #        weight = np.sqrt(s[rank]) / np.sqrt(np.sum(np.abs(aperture)**2))
         collected_mags = np.empty([y_kspace[0],y_kspace[1]])
         comm.Allreduce(np.abs(z_F) ** 2, collected_mags, op=MPI.SUM)
 #        collected_mags = collected_mags.T #for some reason, Allreduce transposes in this context
-        scale = (1-w) * current_dp / np.sqrt(collected_mags) + w
+        collected_mags = np.sqrt(collected_mags)
+        scale = (1-w) * current_dp / collected_mags + w
         z_F = scale * z_F
         z = z_F + alpha_itt * (Z[:,:,aper] - z_0)
         Z[:][:,:,aper] = z.copy()
@@ -167,7 +168,7 @@ for itt in range(iterations):
         aperture = (((1-beta_ap)*aperture + ds * p_u_new * np.conj(u_new)) / 
                     ((1-beta_ap) + ds * np.abs(u_new) ** 2))            
         s[rank] = np.sum(np.abs(aperture)**2)
-        fourierErrorGlobal[itt,aper] = (np.sum(np.abs(current_dp - np.sqrt(collected_mags))) / 
+        fourierErrorGlobal[itt,aper] = (np.sum(np.abs(current_dp - collected_mags)) / 
                           np.sum(current_dp))
         
     meanErr = np.mean(fourierErrorGlobal[itt,:]) 
