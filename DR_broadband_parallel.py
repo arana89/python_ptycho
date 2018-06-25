@@ -47,9 +47,9 @@ aperture = np.squeeze(ePIE_struct[0,0].InitialAp)
 iterations = np.squeeze(ePIE_struct[0,0].Iterations)
 show_im = 0
 s = np.squeeze(ePIE_struct[0,0].S)
-s = s[:,0]
+#s = s[:,0]
 s_true = np.squeeze(ePIE_struct[0,0].S_true)
-s_true = s_true[:,0]
+#s_true = s_true[:,0]
 n_modes = pixel_size.shape[0]
 del(mat_contents)
 del(ePIE_struct)
