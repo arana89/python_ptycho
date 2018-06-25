@@ -142,7 +142,6 @@ for itt in range(iterations):
     for aper in posOrder:
         current_dp = diffpats[:,:,aper].copy()
         u_old = big_obj[cropR[aper,:]][:,cropC[aper,:]].copy()
-        object_max = np.max(np.abs(u_old))
         probe_max = np.max(np.abs(aperture))
         p_u = u_old * aperture
         z_0 = np.fft.fft2(p_u)
@@ -162,10 +161,11 @@ for itt in range(iterations):
         #update object
         u_new = (((1-beta_obj)/dt) * u_old + p_u_new * np.conj(aperture)) / ((1-beta_obj)/dt + np.abs(aperture)**2)
         big_obj[np.ix_(cropR[aper,:],cropC[aper,:])] = u_new.copy()
-        update_factor_pr = beta_ap / object_max ** 2
+        object_max = np.max(np.abs(u_new))
+        ds = beta_ap / object_max ** 2
         #update probe
-        aperture = (((1-beta_ap)*aperture + update_factor_pr * p_u_new * np.conj(u_new)) / 
-                    ((1-beta_ap) + update_factor_pr * np.abs(u_new) ** 2))            
+        aperture = (((1-beta_ap)*aperture + ds * p_u_new * np.conj(u_new)) / 
+                    ((1-beta_ap) + ds * np.abs(u_new) ** 2))            
         s[rank] = np.sum(np.abs(aperture)**2)
         fourierErrorGlobal[itt,aper] = (np.sum(np.abs(current_dp - np.sqrt(collected_mags))) / 
                           np.sum(current_dp))
