@@ -1,9 +1,8 @@
 #!/usr/bin/env python2
 # -*- coding: utf-8 -*-
 """
-Created on Mon May  1 13:01:27 2017
-
-@author: Arjun1
+most updated version with relaxation term
+@author: Arjun Rana
 """
 #%%
 import os
@@ -25,6 +24,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument("-bo","--beta_obj",type=float,default=0.9,help="beta for object update")
 parser.add_argument("-ba", "--beta_ap",type=float,default=0.9,help="beta for probe update")
 parser.add_argument("-pn","--probe_norm",action="store_true",help="probe normalization flag")
+parser.add_argument("-al", "--alpha",type=float,default=0.1,help="relaxation term")
 parser.add_argument("-sip","--semi_implicit_P",action="store_true",help="semi implicit probe update flag")
 parser.add_argument("-wi", "--weight_initial",type=float,default=0.1,help="initial weight for fourier constraint")
 parser.add_argument("-wf", "--weight_final",type=float,default=0.6,help="final weight for fourier constraint")
@@ -60,6 +60,7 @@ if size != n_modes:
 beta_ap = args.beta_ap
 beta_obj = args.beta_obj
 probe_norm = bool(args.probe_norm)
+alpha = args.alpha
 semi_implicit_P = bool(args.semi_implicit_P)
 weight_initial = args.weight_initial
 weight_final = args.weight_final
@@ -76,6 +77,7 @@ if rank == 0:
     print "beta obj: %r" % beta_obj
     print "beta_ap: %r" % beta_ap
     print "probe norm: %r" % probe_norm
+    print "alpha: %r" % alpha
     print "semi_implicit_P: %r" % semi_implicit_P
     print "weight_initial: %r" % weight_initial
     print "weight_final: %r" % weight_final
@@ -83,7 +85,7 @@ if rank == 0:
     print "misc notes: %s" % args.misc_notes
 #%% define parameters from data and for reconstruction
 for i in range(diffpats.shape[2]):
-    diffpats[:,:,i] = np.fft.fftshift(diffpats[:,:,i])
+    diffpats[:,:,i] = np.fft.fftshift(np.sqrt(diffpats[:,:,i]))
     
 y_kspace = [diffpats.shape[0], diffpats.shape[1]]
 nApert = diffpats.shape[2]
@@ -121,6 +123,7 @@ else:
 aperture = aperture + 0j
 Z = np.zeros([y_kspace[0],y_kspace[1],nApert],dtype=complex)
 ws = weight_initial + (weight_final - weight_initial)* ((np.arange(iterations,dtype=float)+1)/iterations) ** order
+alpha_itts = alpha - (alpha-0.1) * ((np.arange(iterations,dtype=float)+1)/iterations) ** 2.0
 fourierErrorGlobal = np.zeros([iterations,nApert]) 
      
  #%% main reconstruction loop
@@ -129,6 +132,7 @@ if rank == 0:
 for itt in range(iterations):
     t0 = time.time()
     w = ws[itt]
+    alpha_itt = alpha_itts[itt].copy()
     if rank == 0:
         posOrder = np.random.permutation(np.arange(nApert,dtype='i'))
     else:
@@ -141,27 +145,30 @@ for itt in range(iterations):
         object_max = np.max(np.abs(u_old))
         probe_max = np.max(np.abs(aperture))
         p_u = u_old * aperture
-        z_u = np.fft.fft2(p_u)
-        z = Z[:,:,aper].copy()
-        z_F = 2*z_u - z
+        z_0 = np.fft.fft2(p_u)
+#        z = Z[:,:,aper].copy()
+        z_F = (1-alpha_itt)*z_0 - alpha_itt * Z[:,:,aper]
 #        weight = np.sqrt(s[rank]) / np.sqrt(np.sum(np.abs(aperture)**2))
         collected_mags = np.empty([y_kspace[0],y_kspace[1]])
         comm.Allreduce(np.abs(z_F) ** 2, collected_mags, op=MPI.SUM)
 #        collected_mags = collected_mags.T #for some reason, Allreduce transposes in this context
-        scale = (1-w) * np.sqrt(current_dp / collected_mags) + w
+        scale = (1-w) * current_dp / np.sqrt(collected_mags) + w
         z_F = scale * z_F
-        z += z_F - z_u
+        z = z_F + alpha_itt * (Z[:,:,aper] - z_0)
         Z[:][:,:,aper] = z.copy()
         p_u_new = np.fft.ifft2(z)
         diff_exit_wave = p_u_new - p_u
         dt = beta_obj / probe_max ** 2
+        #update object
         u_new = (((1-beta_obj)/dt) * u_old + p_u_new * np.conj(aperture)) / ((1-beta_obj)/dt + np.abs(aperture)**2)
         big_obj[np.ix_(cropR[aper,:],cropC[aper,:])] = u_new.copy()
         update_factor_pr = beta_ap / object_max ** 2
-        aperture += update_factor_pr * np.conj(u_old) * diff_exit_wave            
+        #update probe
+        aperture = (((1-beta_ap)*aperture + update_factor_pr * p_u_new * np.conj(u_new)) / 
+                    ((1-beta_ap) + update_factor_pr * np.abs(u_new) ** 2))            
         s[rank] = np.sum(np.abs(aperture)**2)
-        fourierErrorGlobal[itt,aper] = (np.sum(np.abs(np.sqrt(current_dp) - np.sqrt(collected_mags))) / 
-                          np.sum(np.sqrt(current_dp)))
+        fourierErrorGlobal[itt,aper] = (np.sum(np.abs(current_dp - np.sqrt(collected_mags))) / 
+                          np.sum(current_dp))
         
     meanErr = np.mean(fourierErrorGlobal[itt,:]) 
     if rank == 0:
