@@ -67,11 +67,26 @@ def rFactor(a,b):
     R = np.sum(np.abs(np.abs(a) - np.abs(b))) / np.sum(np.abs(a))
     return R
 
+def fresnel_advance(u_0, dx, dy, z, llambda):    
+    # input a field u_0, spatial resolution dx dy, propagation distance z, 
+    #wavelength llambda and outputs a propagated field u_out
+    k = 2 * np.pi / float(llambda)
+    ny, nx = u_0.shape
+    l_x = float(dx) * nx
+    l_y = float(dy) * ny
+    df_x = 1 / l_x
+    df_y = 1 / l_y
+    yu_vec = np.ones([nx,1])
+    xu_vec = np.arange(nx).reshape(1,nx) - nx // 2
+    yv_vec = np.ones([ny,1]).reshape(1,ny)
+    xv_vec = np.arange(ny).reshape(ny,1) - ny // 2
+    u = yu_vec.dot(xu_vec) * df_x
+    v =  xv_vec.dot(yv_vec)* df_y
     
-    
-    
-    
-    
+    O = np.fft.fftshift(np.fft.fftn(np.fft.ifftshift(u_0)))
+    H = np.exp(1j * k * float(z)) * np.exp(-1j*np.pi*float(llambda)*float(z)*( u** 2 + v ** 2))
+    u_out = np.fft.fftshift((np.fft.ifftn(np.fft.ifftshift(O * H))))
+    return u_out 
     
     
     
