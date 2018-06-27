@@ -1,4 +1,4 @@
-#!/usr/bin/env python2
+#!/u/local/apps/python/2.7.13/bin/python
 # -*- coding: utf-8 -*-
 """
 most updated version with relaxation term
@@ -177,6 +177,20 @@ for itt in range(iterations):
     if bestErr > meanErr:
         bestObj = big_obj.copy()
         bestErr = meanErr.copy()
+    if np.mod(itt,10) == 0:
+        if rank == 0:
+            sGlobal = np.empty([n_modes,1])
+        else:
+            sGlobal = None    
+        comm.Gather(s[rank], sGlobal, root=0)
+        bestObjs = {}
+        apertures = {}
+        bestObjs = comm.gather(bestObj,root=0)
+        apertures = comm.gather(aperture, root=0)
+        if rank == 0:
+            saveString = "DR_output_itt_%s" % itt
+            np.savez(saveString,bestObj=bestObjs, aperture=apertures,
+                 fourierError=fourierErrorGlobal, s=sGlobal)
     comm.barrier()
 #%%gather S
 if rank == 0:
