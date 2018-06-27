@@ -33,6 +33,8 @@ parser.add_argument("-ns","--no_save",action="store_true",help="don't save outpu
 parser.add_argument("-raa", "--replace_ap_after",type=int,default=0,help="when to start probe replacement")
 parser.add_argument("-rau", "--replace_ap_until",type=int,default=1000000000,help="when to stop probe replacement")
 parser.add_argument("-arf", "--ap_repl_freq",type=float,default=0.1,help="probe replacement frequency")
+parser.add_argument("-bm","--best_mode", type=int, default=100000,help="optional input best mode if not in ePIE_inputs")
+parser.add_argument("-fd","--fresnel_dist", type=float, default=0.0,help="optional input fresnel distance if not in ePIE_inputs")
 parser.add_argument("-mn","--misc_notes",default='',help="miscellaneous notes")
 parser.add_argument("-i","--input_file",help="full/path/to/input")
 args = parser.parse_args()
@@ -53,8 +55,15 @@ show_im = 0
 s = np.squeeze(ePIE_struct[0,0].S)
 s_true = np.squeeze(ePIE_struct[0,0].S_true)
 n_modes = pixel_size.shape[0]
-best_mode = int(np.squeeze(ePIE_struct[0,0].central_mode) - 1) #to account for difference in indexing
-fresnel_dist = float(np.squeeze(ePIE_struct[0,0].fresnel_dist))
+try:
+    best_mode = int(np.squeeze(ePIE_struct[0,0].central_mode) - 1) #to account for difference in indexing
+except AttributeError:
+    best_mode = args.best_mode
+try:    
+    fresnel_dist = float(np.squeeze(ePIE_struct[0,0].fresnel_dist))
+except AttributeError:
+    fresnel_dist = args.fresnel_dist
+
 del(mat_contents)
 del(ePIE_struct)
 
@@ -92,6 +101,8 @@ if rank == 0:
     print "probe replacement frequency: %r" % ap_repl_freq
     print "probe replacement after iteration: %d" % replace_ap_after
     print "probe replacement until iteration: %d" % replace_ap_until
+    print "best mode: %d" % best_mode
+    print "fresnel distance: %r" % fresnel_dist
     print "misc notes: %s" % args.misc_notes
 #%% define parameters from data and for reconstruction
 for i in range(diffpats.shape[2]):
