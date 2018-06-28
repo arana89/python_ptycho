@@ -188,7 +188,7 @@ for itt in range(iterations):
         bestObjs = comm.gather(bestObj,root=0)
         apertures = comm.gather(aperture, root=0)
         if rank == 0:
-            saveString = "DR_output_itt_%s" % itt
+            saveString = "DR_output_itt_%s_%s" % (itt, job_id)
             np.savez(saveString,bestObj=bestObjs, aperture=apertures,
                  fourierError=fourierErrorGlobal, s=sGlobal)
     comm.barrier()
