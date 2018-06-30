@@ -1,10 +1,12 @@
-#!/u/local/apps/python/2.7.13/bin/python
+#!/u/home/a/arjunran/.conda/envs/intel_mkl/bin/python
 # -*- coding: utf-8 -*-
 """
 most updated version with relaxation term
 @author: Arjun Rana
 """
 #%%
+import sys
+sys.path[-2] = sys.path[-1] #because conda environment loads the global site-packages first...
 import os
 import numpy as np
 import scipy.io as sio
@@ -37,7 +39,7 @@ args = parser.parse_args()
 input_file = args.input_file
 mat_contents = sio.loadmat(input_file, struct_as_record=False)
 ePIE_struct = mat_contents['ePIE_inputs']
-diffpats = ePIE_struct[0,0].Patterns
+patterns = ePIE_struct[0,0].Patterns
 positions = ePIE_struct[0,0].Positions 
 file_name = ePIE_struct[0,0].FileName
 pixel_size = np.squeeze(ePIE_struct[0,0].PixelSize)
@@ -84,32 +86,32 @@ if rank == 0:
     print "number of modes: %d" % n_modes
     print "misc notes: %s" % args.misc_notes
 #%% define parameters from data and for reconstruction
-for i in range(diffpats.shape[2]):
-    diffpats[:,:,i] = np.fft.fftshift(np.sqrt(diffpats[:,:,i]))
-    
-y_kspace = [diffpats.shape[0], diffpats.shape[1]]
-nApert = diffpats.shape[2]
+diffpats = np.empty(np.roll(patterns.shape,1))
+for i in range(patterns.shape[2]):
+    diffpats[i,:,:] = np.fft.fftshift(patterns[:,:,i])
+del(patterns)    
+little_area = diffpats.shape[1]
+n_apert = diffpats.shape[0]
 bestErr = 100
-littleArea = y_kspace[0] #dp should be square
-littleCent = littleArea // 2
-cropVec = np.arange(littleArea) - littleCent
+littleCent = little_area // 2
+cropVec = np.arange(little_area) - littleCent
 #%% getting center positions for cropping ROIs (parallel for each wavelength)
 positionArrayLocal, bigXLocal, bigYLocal = (pr.convertToPixelPositions(positions,
-                                                pixel_size[rank],littleArea))
+                                                pixel_size[rank],little_area))
 centerYLocal = np.round(positionArrayLocal[:,1]).astype(int)
 centerXLocal = np.round(positionArrayLocal[:,0]).astype(int)
 bigXLocal = bigXLocal.astype(int)
 centBig = bigXLocal // 2
 bigYLocal = bigYLocal.astype(int)
-cropR = np.zeros([nApert,littleArea], dtype=int)
-cropC = np.zeros([nApert, littleArea], dtype=int)
-for aper in range(nApert):
+cropR = np.zeros([n_apert,little_area], dtype=int)
+cropC = np.zeros([n_apert, little_area], dtype=int)
+for aper in range(n_apert):
     cropR[aper,:] = cropVec + centerYLocal[aper]
     cropC[aper,:] = cropVec + centerXLocal[aper] 
 #%% create initial guess for aperture and object
 
 if aperture[rank] == 0:
-    aperture = pr.makeCircleMask(np.ceil(ap_radius / pixel_size[rank]),littleArea)
+    aperture = pr.makeCircleMask(np.ceil(ap_radius / pixel_size[rank]),little_area)
     initialAperture = aperture.copy()
 else:
     initialAperture = aperture.copy()  
@@ -121,10 +123,10 @@ if big_obj[rank] ==  0:
 else:
     initialObj = big_obj.copy()
 aperture = aperture + 0j
-Z = np.zeros([y_kspace[0],y_kspace[1],nApert],dtype=complex)
+Z = np.zeros([little_area,little_area,n_apert],dtype=complex)
 ws = weight_initial + (weight_final - weight_initial)* ((np.arange(iterations,dtype=float)+1)/iterations) ** order
 alpha_itts = alpha - (alpha-0.1) * ((np.arange(iterations,dtype=float)+1)/iterations) ** 2.0
-fourierErrorGlobal = np.zeros([iterations,nApert]) 
+fourierErrorGlobal = np.zeros([iterations,n_apert]) 
      
  #%% main reconstruction loop
 if rank == 0: 
@@ -134,13 +136,13 @@ for itt in range(iterations):
     w = ws[itt]
     alpha_itt = alpha_itts[itt].copy()
     if rank == 0:
-        posOrder = np.random.permutation(np.arange(nApert,dtype='i'))
+        posOrder = np.random.permutation(np.arange(n_apert,dtype='i'))
     else:
-        posOrder = np.empty(nApert,dtype='i')
+        posOrder = np.empty(n_apert,dtype='i')
     comm.Bcast(posOrder, root=0) #broadcasting the same permutation order
     #to all modes
     for aper in posOrder:
-        current_dp = diffpats[:,:,aper].copy()
+        current_dp = diffpats[aper,:,:].copy()
         u_old = big_obj[cropR[aper,:]][:,cropC[aper,:]].copy()
         probe_max = np.max(np.abs(aperture))
         p_u = u_old * aperture
@@ -148,7 +150,7 @@ for itt in range(iterations):
 #        z = Z[:,:,aper].copy()
         z_F = (1+alpha_itt)*z_0 - alpha_itt * Z[:,:,aper]
 #        weight = np.sqrt(s[rank]) / np.sqrt(np.sum(np.abs(aperture)**2))
-        collected_mags = np.empty([y_kspace[0],y_kspace[1]])
+        collected_mags = np.empty([little_area,little_area])
         comm.Allreduce(np.abs(z_F) ** 2, collected_mags, op=MPI.SUM)
 #        collected_mags = collected_mags.T #for some reason, Allreduce transposes in this context
         collected_mags = np.sqrt(collected_mags)
