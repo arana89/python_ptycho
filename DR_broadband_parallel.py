@@ -86,7 +86,7 @@ if rank == 0:
     print "number of modes: %d" % n_modes
     print "misc notes: %s" % args.misc_notes
 #%% define parameters from data and for reconstruction
-diffpats = np.empty(np.roll(patterns.shape,1))
+diffpats = np.empty(np.roll(patterns.shape,1)).astype(np.float32) #single to save memory
 for i in range(patterns.shape[2]):
     diffpats[i,:,:] = np.fft.fftshift(patterns[:,:,i])
 del(patterns)    
@@ -118,13 +118,13 @@ else:
 
 if big_obj[rank] ==  0:                  
     big_obj = (np.random.rand(bigXLocal, bigYLocal) * 
-                  np.exp(1j * np.random.rand(bigXLocal, bigYLocal)))
+                  np.exp(1j * np.random.rand(bigXLocal, bigYLocal))).astype(np.float32)
     initialObj = big_obj.copy()
 else:
     initialObj = big_obj.copy()
 aperture = aperture + 0j
 #Z = np.zeros([little_area,little_area,n_apert],dtype=complex)
-Z = np.random.random_sample([little_area,little_area,n_apert]).astype(np.complex128)
+Z = np.random.random_sample([little_area,little_area,n_apert]).astype(np.float32)
 ws = weight_initial + (weight_final - weight_initial)* ((np.arange(iterations,dtype=float)+1)/iterations) ** order
 alpha_itts = alpha - (alpha-0.1) * ((np.arange(iterations,dtype=float)+1)/iterations) ** 2.0
 fourierErrorGlobal = np.zeros([iterations,n_apert]) 
@@ -157,6 +157,8 @@ for itt in range(iterations):
 #        collected_mags = collected_mags.T #for some reason, Allreduce transposes in this context
         collected_mags = np.sqrt(collected_mags)
         scale = (1-w) * current_dp / collected_mags + w
+        fourierErrorGlobal[itt,aper] = (np.sum(np.abs(current_dp - collected_mags)) / 
+                          np.sum(current_dp))
         z_F = scale * z_F
         z = z_F + alpha_itt * (Z[:,:,aper] - z_0)
         Z[:][:,:,aper] = z.copy()
@@ -166,18 +168,17 @@ for itt in range(iterations):
         #update object
         u_new = (((1-beta_obj)/dt) * u_old + p_u_new * np.conj(aperture)) / ((1-beta_obj)/dt + np.abs(aperture)**2)
         big_obj[np.ix_(cropR[aper,:],cropC[aper,:])] = u_new.copy()
-        object_max = np.max(np.abs(u_new))
-        ds = beta_ap / object_max ** 2
         #update probe
-        aperture = ( ( (1-beta_ap)*aperture + ds * p_u_new * np.conj(u_new) ) / 
-                    ( (1-beta_ap) + ds * np.abs(u_new) ** 2) )  
+        if np.mod(rank+1,3) != 0:
+            object_max = np.max(np.abs(u_new))
+            ds = beta_ap / object_max ** 2
+            aperture = ( ( (1-beta_ap)*aperture + ds * p_u_new * np.conj(u_new) ) / 
+                        ( (1-beta_ap) + ds * np.abs(u_new) ** 2) )  
         
         if probe_norm:
             aperture = aperture / np.max(np.abs(aperture))
             
         s[rank] = np.sum(np.abs(aperture)**2)
-        fourierErrorGlobal[itt,aper] = (np.sum(np.abs(current_dp - collected_mags)) / 
-                          np.sum(current_dp))
         
     meanErr = np.mean(fourierErrorGlobal[itt,:]) 
     if rank == 0:
@@ -185,7 +186,7 @@ for itt in range(iterations):
     if bestErr > meanErr:
         bestObj = big_obj.copy()
         bestErr = meanErr.copy()
-    if np.mod(itt,25) == 0:
+    if (np.mod(itt,25) == 0 and itt > 0):
         if rank == 0:
             sGlobal = np.empty([n_modes,1])
         else:
