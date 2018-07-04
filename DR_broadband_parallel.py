@@ -29,7 +29,7 @@ parser.add_argument("-pn","--probe_norm",action="store_true",help="probe normali
 parser.add_argument("-al", "--alpha",type=float,default=0.1,help="relaxation term")
 parser.add_argument("-sip","--semi_implicit_P",action="store_true",help="semi implicit probe update flag")
 parser.add_argument("-wi", "--weight_initial",type=float,default=0.1,help="initial weight for fourier constraint")
-parser.add_argument("-wf", "--weight_final",type=float,default=0.6,help="final weight for fourier constraint")
+parser.add_argument("-wf", "--weight_final",type=float,default=0.4,help="final weight for fourier constraint")
 parser.add_argument("-or", "--order",type=float,default=6,help="order of weight")
 parser.add_argument("-ns","--no_save",action="store_true",help="don't save output")
 parser.add_argument("-mn","--misc_notes",default='',help="miscellaneous notes")
@@ -88,7 +88,7 @@ if rank == 0:
 #%% define parameters from data and for reconstruction
 diffpats = np.empty(np.roll(patterns.shape,1)).astype(np.float32) #single to save memory
 for i in range(patterns.shape[2]):
-    diffpats[i,:,:] = np.fft.fftshift(patterns[:,:,i])
+    diffpats[i,:,:] = np.fft.fftshift(np.sqrt(patterns[:,:,i]))
 del(patterns)    
 little_area = diffpats.shape[1]
 n_apert = diffpats.shape[0]
@@ -118,13 +118,13 @@ else:
 
 if big_obj[rank] ==  0:                  
     big_obj = (np.random.rand(bigXLocal, bigYLocal) * 
-                  np.exp(1j * np.random.rand(bigXLocal, bigYLocal))).astype(np.float32)
+                  np.exp(1j * np.random.rand(bigXLocal, bigYLocal)))
     initialObj = big_obj.copy()
 else:
     initialObj = big_obj.copy()
 aperture = aperture + 0j
 #Z = np.zeros([little_area,little_area,n_apert],dtype=complex)
-Z = np.random.random_sample([little_area,little_area,n_apert]).astype(np.float32)
+Z = np.random.random_sample([little_area,little_area,n_apert]).astype(np.complex128)
 ws = weight_initial + (weight_final - weight_initial)* ((np.arange(iterations,dtype=float)+1)/iterations) ** order
 alpha_itts = alpha - (alpha-0.1) * ((np.arange(iterations,dtype=float)+1)/iterations) ** 2.0
 fourierErrorGlobal = np.zeros([iterations,n_apert]) 
@@ -136,7 +136,8 @@ for itt in range(iterations):
     t0 = time.time()
 #    w = ws[itt]
     w = 0.1
-    alpha_itt = alpha_itts[itt].copy()
+#    alpha_itt = alpha_itts[itt].copy()
+    alpha_itt = 0
     if rank == 0:
         posOrder = np.random.permutation(np.arange(n_apert,dtype='i'))
     else:
@@ -169,11 +170,10 @@ for itt in range(iterations):
         u_new = (((1-beta_obj)/dt) * u_old + p_u_new * np.conj(aperture)) / ((1-beta_obj)/dt + np.abs(aperture)**2)
         big_obj[np.ix_(cropR[aper,:],cropC[aper,:])] = u_new.copy()
         #update probe
-        if np.mod(rank+1,3) != 0:
-            object_max = np.max(np.abs(u_new))
-            ds = beta_ap / object_max ** 2
-            aperture = ( ( (1-beta_ap)*aperture + ds * p_u_new * np.conj(u_new) ) / 
-                        ( (1-beta_ap) + ds * np.abs(u_new) ** 2) )  
+        object_max = np.max(np.abs(u_new))
+        ds = beta_ap / object_max ** 2
+        aperture = ( ( (1-beta_ap)*aperture + ds * p_u_new * np.conj(u_new) ) / 
+                    ( (1-beta_ap) + ds * np.abs(u_new) ** 2) )  
         
         if probe_norm:
             aperture = aperture / np.max(np.abs(aperture))
