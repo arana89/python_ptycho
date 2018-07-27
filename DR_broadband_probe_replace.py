@@ -1,10 +1,12 @@
-#!/u/local/apps/python/2.7.13/bin/python
+#!/u/home/a/arjunran/.conda/envs/intel_mkl/bin/python
 # -*- coding: utf-8 -*-
 """
 most updated version with relaxation term
 @author: Arjun Rana
 """
 #%%
+import sys
+sys.path[-2] = sys.path[-1] #because conda environment loads the global site-packages first...
 import os
 import numpy as np
 import scipy.io as sio
@@ -42,7 +44,7 @@ args = parser.parse_args()
 input_file = args.input_file
 mat_contents = sio.loadmat(input_file, struct_as_record=False)
 ePIE_struct = mat_contents['ePIE_inputs']
-diffpats = ePIE_struct[0,0].Patterns
+patterns = ePIE_struct[0,0].Patterns
 positions = ePIE_struct[0,0].Positions 
 file_name = ePIE_struct[0,0].FileName
 pixel_size = np.squeeze(ePIE_struct[0,0].PixelSize)
@@ -53,8 +55,11 @@ iterations = np.squeeze(ePIE_struct[0,0].Iterations)
 llambda = np.squeeze(ePIE_struct[0,0].__getattribute__('lambda'))
 show_im = 0
 s = np.squeeze(ePIE_struct[0,0].S)
-s_true = np.squeeze(ePIE_struct[0,0].S_true)
 n_modes = pixel_size.shape[0]
+try:
+    s_true = np.squeeze(ePIE_struct[0,0].S_true)
+except AttributeError:
+    s_true = np.zeros(s.shape)
 try:
     best_mode = int(np.squeeze(ePIE_struct[0,0].central_mode) - 1) #to account for difference in indexing
 except AttributeError:
@@ -63,7 +68,15 @@ try:
     fresnel_dist = float(np.squeeze(ePIE_struct[0,0].fresnel_dist))
 except AttributeError:
     fresnel_dist = args.fresnel_dist
-
+#%% quick fix for propagators
+sample_distance = 0.1
+detector_pixel_size = 13.5e-6
+detector_size = 2048 
+two_theta = np.arctan(detector_size * detector_pixel_size / 2.0 / sample_distance) 
+q = 4 * np.pi * np.sin(two_theta / 2.0) / llambda
+d = 2 * np.pi / q
+pixel_size_fresnel = d / 2.0
+#%%
 del(mat_contents)
 del(ePIE_struct)
 
@@ -105,13 +118,13 @@ if rank == 0:
     print "fresnel distance: %r" % fresnel_dist
     print "misc notes: %s" % args.misc_notes
 #%% define parameters from data and for reconstruction
-for i in range(diffpats.shape[2]):
-    diffpats[:,:,i] = np.fft.fftshift(np.sqrt(diffpats[:,:,i]))
-    
-y_kspace = [diffpats.shape[0], diffpats.shape[1]]
-n_apert = diffpats.shape[2]
+diffpats = np.empty(np.roll(patterns.shape,1)).astype(np.float32) #single to save memory
+for i in range(patterns.shape[2]):
+    diffpats[i,:,:] = np.fft.fftshift(np.sqrt(patterns[:,:,i]))
+del(patterns)    
+little_area = diffpats.shape[1]
+n_apert = diffpats.shape[0]
 bestErr = 100
-little_area = y_kspace[0] #dp should be square
 little_cent = little_area // 2
 cropVec = np.arange(little_area) - little_cent
 #%% getting center positions for cropping ROIs (parallel for each wavelength)
@@ -129,20 +142,24 @@ for aper in range(n_apert):
     cropC[aper,:] = cropVec + centerXLocal[aper] 
 #%% create initial guess for aperture and object
 
-if aperture[rank] == 0:
+if np.size(aperture[rank]) == 1:
     aperture = pr.makeCircleMask(np.ceil(ap_radius / pixel_size[rank]),little_area)
     initialAperture = aperture.copy()
 else:
-    initialAperture = aperture.copy()  
+    aperture = aperture[rank]
+    initialAperture = aperture[rank].copy()  
 
-if big_obj[rank] ==  0:                  
+if np.size(big_obj[rank]) ==  1:                  
     big_obj = (np.random.rand(bigXLocal, bigYLocal) * 
                   np.exp(1j * np.random.rand(bigXLocal, bigYLocal)))
     initialObj = big_obj.copy()
 else:
-    initialObj = big_obj.copy()
+    big_obj = big_obj[rank]
+    initialObj = big_obj[rank].copy()
+    
 aperture = aperture + 0j
-Z = np.zeros([y_kspace[0],y_kspace[1],n_apert],dtype=complex)
+#Z = np.zeros([little_area,little_area,n_apert],dtype=complex)
+Z = np.random.random_sample([little_area,little_area,n_apert]).astype(np.complex128)
 ws = weight_initial + (weight_final - weight_initial)* ((np.arange(iterations,dtype=float)+1)/iterations) ** order
 alpha_itts = alpha - (alpha-0.1) * ((np.arange(iterations,dtype=float)+1)/iterations) ** 2.0
 fourierErrorGlobal = np.zeros([iterations,n_apert]) 
@@ -163,8 +180,8 @@ cutoff = iterations / 2
 prb_rplment_weight = np.squeeze(np.minimum([(cutoff**4.0/10.0) / (np.arange(iterations)+1)**4.0], [0.1]))
 
 k = 2 * np.pi * llambda[rank]
-l_x = pixel_size[rank] * little_area
-l_y = pixel_size[rank] * little_area
+l_x = pixel_size_fresnel[rank] * little_area
+l_y = pixel_size_fresnel[rank] * little_area
 df_x = 1 / l_x
 df_y = 1 / l_y
 yu_vec = np.ones([little_area,1])
@@ -213,7 +230,7 @@ for itt in range(iterations):
         else:
             probe_replacement_flag = False
             
-        current_dp = diffpats[:,:,aper].copy()
+        current_dp = diffpats[aper,:,:].copy()
         u_old = big_obj[cropR[aper,:]][:,cropC[aper,:]].copy()
         probe_max = np.max(np.abs(aperture))
         p_u = u_old * aperture
@@ -221,7 +238,7 @@ for itt in range(iterations):
 #        z = Z[:,:,aper].copy()
         z_F = (1+alpha_itt)*z_0 - alpha_itt * Z[:,:,aper]
 #        weight = np.sqrt(s[rank]) / np.sqrt(np.sum(np.abs(aperture)**2))
-        collected_mags = np.empty([y_kspace[0],y_kspace[1]])
+        collected_mags = np.empty([little_area,little_area])
         comm.Allreduce(np.abs(z_F) ** 2, collected_mags, op=MPI.SUM)
 #        collected_mags = collected_mags.T #for some reason, Allreduce transposes in this context
         collected_mags = np.sqrt(collected_mags)
@@ -242,6 +259,9 @@ for itt in range(iterations):
         #probe update and replacement
         ap_temp_updated = (((1-beta_ap)*aperture + ds * p_u_new * np.conj(u_new)) / 
                     ((1-beta_ap) + ds * np.abs(u_new) ** 2))
+        if probe_norm:
+            ap_temp_updated = ap_temp_updated / np.max(np.abs(ap_temp_updated))
+            
         if probe_replacement_flag:
             #transmit best aperture to all other modes
             if rank != best_mode:
@@ -277,7 +297,7 @@ for itt in range(iterations):
     if bestErr > meanErr:
         bestObj = big_obj.copy()
         bestErr = meanErr.copy()
-    if (np.mod(itt,50) == 0 and itt > 0):
+    if (np.mod(itt,25) == 0 and itt > 0):
         if rank == 0:
             sGlobal = np.empty([n_modes,1])
         else:
@@ -288,10 +308,9 @@ for itt in range(iterations):
         bestObjs = comm.gather(bestObj,root=0)
         apertures = comm.gather(aperture, root=0)
         if rank == 0:
-            saveString = "DR_output_probe_replace_itt_%s_%s" % (itt, job_id)
+            saveString = "DR_output_probe_replace_%s" % job_id
             np.savez(saveString,bestObj=bestObjs, aperture=apertures,
-                 fourierError=fourierErrorGlobal, s=sGlobal)
-    comm.barrier()
+                 fourierError=fourierErrorGlobal, s=sGlobal, itt_completed=itt+1)
 #%%gather S
 if rank == 0:
     sGlobal = np.empty([n_modes,1])

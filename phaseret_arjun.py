@@ -89,7 +89,14 @@ def fresnel_advance(u_0, dx, dy, z, llambda):
     return u_out 
     
     
-    
-    
-    
-    
+def com_align(obj):
+    #aligns input np array object based on center of mass method
+    N = obj.shape[0]
+    cent = N // 2
+    mesh_ind = np.arange(0,N)
+    mesh_ind -= cent    
+    [X, Y] = np.meshgrid(mesh_ind, mesh_ind)
+    x_com = np.real(np.round(np.sum(obj * X)/np.sum(obj))).astype(int)
+    y_com = np.real(np.round(np.sum(obj * Y)/np.sum(obj))).astype(int)
+    aligned_obj = np.roll(obj, [-y_com, -x_com], [0,1])
+    return {'aligned_obj':aligned_obj, 'x_com':x_com, 'y_com':y_com}

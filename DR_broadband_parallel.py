@@ -23,8 +23,8 @@ size = comm.Get_size() #total number of parallel processors, should
 rank = comm.Get_rank() #ID number of this instance from 0:size-1
 #%% initialize parser for mandatory/optional inputs
 parser = argparse.ArgumentParser()
-parser.add_argument("-bo","--beta_obj",type=float,default=0.9,help="beta for object update")
-parser.add_argument("-ba", "--beta_ap",type=float,default=0.9,help="beta for probe update")
+parser.add_argument("-bo","--beta_obj",type=float,default=0.5,help="beta for object update")
+parser.add_argument("-ba", "--beta_ap",type=float,default=0.5,help="beta for probe update")
 parser.add_argument("-pn","--probe_norm",action="store_true",help="probe normalization flag")
 parser.add_argument("-al", "--alpha",type=float,default=0.1,help="relaxation term")
 parser.add_argument("-sip","--semi_implicit_P",action="store_true",help="semi implicit probe update flag")
@@ -50,7 +50,10 @@ iterations = np.squeeze(ePIE_struct[0,0].Iterations)
 show_im = 0
 s = np.squeeze(ePIE_struct[0,0].S)
 #s = s[:,0]
-s_true = np.squeeze(ePIE_struct[0,0].S_true)
+try:
+    s_true = np.squeeze(ePIE_struct[0,0].S_true)
+except AttributeError:
+    s_true = np.zeros(s.shape)
 #s_true = s_true[:,0]
 n_modes = pixel_size.shape[0]
 del(mat_contents)
@@ -110,18 +113,20 @@ for aper in range(n_apert):
     cropC[aper,:] = cropVec + centerXLocal[aper] 
 #%% create initial guess for aperture and object
 
-if aperture[rank] == 0:
+if np.size(aperture[rank]) == 1:
     aperture = pr.makeCircleMask(np.ceil(ap_radius / pixel_size[rank]),little_area)
     initialAperture = aperture.copy()
 else:
-    initialAperture = aperture.copy()  
+    aperture = aperture[rank]
+    initialAperture = aperture[rank].copy()  
 
-if big_obj[rank] ==  0:                  
+if np.size(big_obj[rank]) ==  1:                  
     big_obj = (np.random.rand(bigXLocal, bigYLocal) * 
                   np.exp(1j * np.random.rand(bigXLocal, bigYLocal)))
     initialObj = big_obj.copy()
 else:
-    initialObj = big_obj.copy()
+    big_obj = big_obj[rank]
+    initialObj = big_obj[rank].copy()
 aperture = aperture + 0j
 #Z = np.zeros([little_area,little_area,n_apert],dtype=complex)
 Z = np.random.random_sample([little_area,little_area,n_apert]).astype(np.complex128)
@@ -197,10 +202,9 @@ for itt in range(iterations):
         bestObjs = comm.gather(bestObj,root=0)
         apertures = comm.gather(aperture, root=0)
         if rank == 0:
-            saveString = "DR_output_itt_%s_%s" % (itt, job_id)
+            saveString = "DR_output_%s" % job_id
             np.savez(saveString,bestObj=bestObjs, aperture=apertures,
-                 fourierError=fourierErrorGlobal, s=sGlobal)
-    comm.barrier()
+                 fourierError=fourierErrorGlobal, s=sGlobal, itt_completed=itt+1)
 #%%gather S
 if rank == 0:
     sGlobal = np.empty([n_modes,1])
@@ -216,7 +220,7 @@ if save_flag:
     if rank == 0:
         saveString = "DR_output_%s" % job_id
         np.savez(saveString,bestObj=bestObjs, aperture=apertures,
-                 fourierError=fourierErrorGlobal, s=sGlobal) #save output as dict 
+                 fourierError=fourierErrorGlobal, s=sGlobal, itt_completed=iterations) 
 if rank == 0:
     print 'reconstruction complete!'
 
